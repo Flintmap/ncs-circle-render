@@ -1,0 +1,7 @@
+{
+  "name": "render",
+  "private": true,
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}
