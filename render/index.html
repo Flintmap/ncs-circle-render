@@ -68,7 +68,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
   <button onclick="document.getElementById('fin').click()">Choose Audio</button>
   <button id="blendBtn">Blend ON</button>
   <button id="recBtn">⏺ Record</button>
-  <button id="lockedBtn" class="on">Locked 60fps ON</button>
+  <button id="lockedBtn">Locked 60fps OFF</button>
   <button id="autoRecBtn">Auto-Rec OFF</button>
   <button id="ghOpenBtn">☁ GitHub Render</button>
 </div>
@@ -124,7 +124,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
 </div>
 <div id="cpTab" class="slide-tab" onclick="toggleCp()">⟨</div>
 
-<div id="cp2" class="">
+<div id="cp2" class="slide-hidden">
   <canvas id="prevC" width="178" height="100" style="aspect-ratio: 16 / 9;"></canvas>
   <div class="divider"></div>
 
@@ -189,9 +189,9 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
     </div>
   </div>
 </div>
-<div id="cp2Tab" class="slide-tab" onclick="toggleCp2()">⟩</div>
+<div id="cp2Tab" class="slide-tab" onclick="toggleCp2()">⟨</div>
 
-<div id="fps">33 fps</div>
+<div id="fps">38 fps</div>
 <div id="recStatus"></div>
 
 <script>
@@ -3862,13 +3862,42 @@ const GH_PACKAGE_JSON = JSON.stringify({
 }, null, 2);
 
 const GH_RENDER_JS =
+"const http = require('http');\n" +
 "const puppeteer = require('puppeteer');\n" +
 "const fs = require('fs');\n" +
 "const path = require('path');\n" +
 "\n" +
+"// Chromium blocks fetch() on file:// pages (opaque/null origin), and this\n" +
+"// page needs to fetch job/config.json, job/audio.*, etc. relative to\n" +
+"// itself. Serving the render/ directory over a local HTTP server sidesteps\n" +
+"// that entirely — everything becomes a normal same-origin request.\n" +
+"function mimeType(file){\n" +
+"  const ext = path.extname(file).toLowerCase();\n" +
+"  const map = { '.html':'text/html', '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.m4a':'audio/mp4', '.ogg':'audio/ogg', '.flac':'audio/flac', '.aac':'audio/aac' };\n" +
+"  return map[ext] || 'application/octet-stream';\n" +
+"}\n" +
+"function startServer(rootDir){\n" +
+"  return new Promise((resolve) => {\n" +
+"    const server = http.createServer((req, res) => {\n" +
+"      let urlPath = decodeURIComponent(req.url.split('?')[0]);\n" +
+"      if (urlPath === '/') urlPath = '/index.html';\n" +
+"      const filePath = path.join(rootDir, urlPath);\n" +
+"      fs.readFile(filePath, (err, data) => {\n" +
+"        if (err) { res.writeHead(404); res.end('Not found'); return; }\n" +
+"        res.writeHead(200, { 'Content-Type': mimeType(filePath) });\n" +
+"        res.end(data);\n" +
+"      });\n" +
+"    });\n" +
+"    server.listen(0, '127.0.0.1', () => resolve(server));\n" +
+"  });\n" +
+"}\n" +
+"\n" +
 "(async () => {\n" +
 "  const outDir = path.join(__dirname, 'output');\n" +
 "  fs.mkdirSync(outDir, { recursive: true });\n" +
+"\n" +
+"  const server = await startServer(__dirname);\n" +
+"  const port = server.address().port;\n" +
 "\n" +
 "  const browser = await puppeteer.launch({\n" +
 "    headless: 'new',\n" +
@@ -3886,8 +3915,8 @@ const GH_RENDER_JS =
 "  });\n" +
 "  await page.exposeFunction('__ghFail', (msg) => { failed = msg; done = true; });\n" +
 "\n" +
-"  const indexPath = 'file://' + path.join(__dirname, 'index.html') + '?ghHeadless=1';\n" +
-"  await page.goto(indexPath, { waitUntil: 'load', timeout: 60000 });\n" +
+"  const indexUrl = 'http://127.0.0.1:' + port + '/index.html?ghHeadless=1';\n" +
+"  await page.goto(indexUrl, { waitUntil: 'load', timeout: 60000 });\n" +
 "\n" +
 "  const start = Date.now();\n" +
 "  const timeoutMs = 55 * 60 * 1000;\n" +
@@ -3897,6 +3926,7 @@ const GH_RENDER_JS =
 "  }\n" +
 "\n" +
 "  await browser.close();\n" +
+"  server.close();\n" +
 "  if (failed) { console.error('Render failed:', failed); process.exit(1); }\n" +
 "  console.log('Render complete.');\n" +
 "})().catch(e => { console.error(e); process.exit(1); });\n";
